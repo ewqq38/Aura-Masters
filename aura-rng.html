@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aura RNG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #05050f; font-family: 'Inter', sans-serif; color: #e2e8f0; }
+
+    @keyframes floatP    { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-10px) scale(1.15)} }
+    @keyframes popIn     { 0%{transform:scale(0);opacity:0} 70%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
+    @keyframes rarePop   { 0%{transform:scale(1)} 40%{transform:scale(1.22)} 100%{transform:scale(1)} }
+    @keyframes rollPulse { 0%,100%{box-shadow:0 0 20px rgba(124,58,237,0.6),0 4px 24px rgba(124,58,237,0.3)} 50%{box-shadow:0 0 50px rgba(167,139,250,0.95),0 4px 40px rgba(124,58,237,0.6)} }
+    @keyframes titleGlow { 0%,100%{text-shadow:0 0 30px rgba(167,139,250,0.4)} 50%{text-shadow:0 0 70px rgba(167,139,250,0.9),0 0 120px rgba(124,58,237,0.4)} }
+    @keyframes slideDown { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes notif     { 0%{opacity:0;transform:translateX(-50%) translateY(-14px)} 12%,88%{opacity:1;transform:translateX(-50%) translateY(0)} 100%{opacity:0;transform:translateX(-50%) translateY(-14px)} }
+    @keyframes flashFade { 0%{opacity:0.72} 100%{opacity:0} }
+    @keyframes spinIcon  { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+    @keyframes slotFlick { 0%,100%{opacity:1} 50%{opacity:0.55} }
+    @keyframes revealBounce { 0%{transform:scale(0.2) rotate(-12deg);opacity:0} 60%{transform:scale(1.12) rotate(2deg)} 100%{transform:scale(1) rotate(0);opacity:1} }
+
+    ::-webkit-scrollbar { width: 3px; height: 3px; }
+    ::-webkit-scrollbar-track { background: #05050f; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+    input  { outline: none; font-family: inherit; }
+    button { font-family: inherit; cursor: pointer; transition: all 0.15s; }
+    button:active:not(:disabled) { transform: scale(0.96); }
+    button:disabled { cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // ─── RARITY DATA ──────────────────────────────────────────────────────────
+    const RARITY = {
+      common:    { label:"Common",    color:"#94a3b8", prob:0.40,   coins:1,         ord:1  },
+      uncommon:  { label:"Uncommon",  color:"#4ade80", prob:0.25,   coins:8,         ord:2  },
+      rare:      { label:"Rare",      color:"#60a5fa", prob:0.15,   coins:30,        ord:3  },
+      epic:      { label:"Epic",      color:"#c084fc", prob:0.08,   coins:150,       ord:4  },
+      legendary: { label:"Legendary", color:"#fbbf24", prob:0.05,   coins:600,       ord:5  },
+      mythic:    { label:"Mythic",    color:"#f97316", prob:0.025,  coins:3000,      ord:6  },
+      divine:    { label:"Divine",    color:"#e879f9", prob:0.012,  coins:15000,     ord:7  },
+      cosmic:    { label:"Cosmic",    color:"#22d3ee", prob:0.007,  coins:75000,     ord:8  },
+      primordial:{ label:"Primordial",color:"#fb923c", prob:0.003,  coins:400000,    ord:9  },
+      eternal:   { label:"Eternal",   color:"#818cf8", prob:0.001,  coins:2000000,   ord:10 },
+      celestial: { label:"Celestial", color:"#fef08a", prob:0.0004, coins:15000000,  ord:11 },
+      glitched:  { label:"???",       color:"#ff006e", prob:0.0001, coins:999999999, ord:12 },
+    };
+    const RK = Object.keys(RARITY);
+
+    // ─── AURA POOL (64 auras) ────────────────────────────────────────────────
+    const AURAS = [
+      // Common (8)
+      { id:"droplet",    name:"Droplet",          rarity:"common",     icon:"💧" },
+      { id:"cinder",     name:"Cinder",           rarity:"common",     icon:"🔸" },
+      { id:"flame",      name:"Flame",            rarity:"common",     icon:"🔥" },
+      { id:"breeze",     name:"Breeze",           rarity:"common",     icon:"💨" },
+      { id:"spark",      name:"Spark",            rarity:"common",     icon:"⚡" },
+      { id:"leaf",       name:"Leaf",             rarity:"common",     icon:"🍃" },
+      { id:"pebble",     name:"Pebble",           rarity:"common",     icon:"🪨" },
+      { id:"ripple",     name:"Ripple",           rarity:"common",     icon:"〰️" },
+      // Uncommon (8)
+      { id:"frost",      name:"Frost",            rarity:"uncommon",   icon:"❄️" },
+      { id:"ember",      name:"Ember",            rarity:"uncommon",   icon:"✨" },
+      { id:"thunder",    name:"Thunder",          rarity:"uncommon",   icon:"⛈️" },
+      { id:"crystal",    name:"Crystal",          rarity:"uncommon",   icon:"💎" },
+      { id:"shadow",     name:"Shadow",           rarity:"uncommon",   icon:"🌑" },
+      { id:"smoke",      name:"Smoke",            rarity:"uncommon",   icon:"🌫️" },
+      { id:"tide",       name:"Tide",             rarity:"uncommon",   icon:"🌊" },
+      { id:"mushroom",   name:"Mushroom",         rarity:"uncommon",   icon:"🍄" },
+      // Rare (8)
+      { id:"solarflare", name:"Solar Flare",      rarity:"rare",       icon:"🌞" },
+      { id:"cometstorm", name:"Comet Storm",      rarity:"rare",       icon:"☄️" },
+      { id:"nebula",     name:"Nebula",           rarity:"rare",       icon:"🌌" },
+      { id:"aurora",     name:"Aurora",           rarity:"rare",       icon:"🌈" },
+      { id:"inferno",    name:"Inferno",          rarity:"rare",       icon:"🌋" },
+      { id:"glacier",    name:"Glacier",          rarity:"rare",       icon:"🏔️" },
+      { id:"acidrain",   name:"Acid Rain",        rarity:"rare",       icon:"🧪" },
+      { id:"blizzard",   name:"Blizzard",         rarity:"rare",       icon:"🌨️" },
+      // Epic (7)
+      { id:"supernova",  name:"Supernova",        rarity:"epic",       icon:"💥" },
+      { id:"blackhole",  name:"Black Hole",       rarity:"epic",       icon:"🕳️" },
+      { id:"wormhole",   name:"Wormhole",         rarity:"epic",       icon:"🌀" },
+      { id:"antimatter", name:"Antimatter",       rarity:"epic",       icon:"⚛️" },
+      { id:"cursed",     name:"Cursed Flame",     rarity:"epic",       icon:"🔮" },
+      { id:"crystrain",  name:"Crystal Rain",     rarity:"epic",       icon:"💠" },
+      { id:"angels",     name:"Angel's Tears",    rarity:"epic",       icon:"😇" },
+      // Legendary (7)
+      { id:"timerift",   name:"Time Rift",        rarity:"legendary",  icon:"⏱️" },
+      { id:"singularity",name:"Singularity",      rarity:"legendary",  icon:"🌟" },
+      { id:"paradox",    name:"Paradox",          rarity:"legendary",  icon:"♾️" },
+      { id:"ancientvoid",name:"Ancient Void",     rarity:"legendary",  icon:"🌑" },
+      { id:"divlight",   name:"Divine Light",     rarity:"legendary",  icon:"✨" },
+      { id:"infloop",    name:"Infinity Loop",    rarity:"legendary",  icon:"🔄" },
+      { id:"universe",   name:"Universe",         rarity:"legendary",  icon:"🪐" },
+      // Mythic (6)
+      { id:"therift",    name:"The Rift",         rarity:"mythic",     icon:"🌀" },
+      { id:"nothingness",name:"Nothingness",      rarity:"mythic",     icon:"⬛" },
+      { id:"creation",   name:"Creation",         rarity:"mythic",     icon:"🌱" },
+      { id:"pulsar",     name:"Pulsar",           rarity:"mythic",     icon:"📡" },
+      { id:"quicksand",  name:"Quicksand",        rarity:"mythic",     icon:"⏳" },
+      { id:"cometpulse", name:"Comet Pulse",      rarity:"mythic",     icon:"🌠" },
+      // Divine (5)
+      { id:"etflame",    name:"Eternal Flame",    rarity:"divine",     icon:"🕯️" },
+      { id:"sstorm",     name:"Solar Storm",      rarity:"divine",     icon:"☀️" },
+      { id:"cosbloom",   name:"Cosmic Bloom",     rarity:"divine",     icon:"🌸" },
+      { id:"quantum",    name:"Quantum",          rarity:"divine",     icon:"⚛️" },
+      { id:"starforge",  name:"Star Forge",       rarity:"divine",     icon:"⭐" },
+      // Cosmic (5)
+      { id:"darkmatter", name:"Dark Matter",      rarity:"cosmic",     icon:"🌑" },
+      { id:"eventhorizon",name:"Event Horizon",   rarity:"cosmic",     icon:"🔭" },
+      { id:"voidwalk",   name:"Void Walker",      rarity:"cosmic",     icon:"👁️" },
+      { id:"astral",     name:"Astral Plane",     rarity:"cosmic",     icon:"🔮" },
+      { id:"nebcore",    name:"Nebular Core",     rarity:"cosmic",     icon:"💫" },
+      // Primordial (4)
+      { id:"prichaos",   name:"Primordial Chaos", rarity:"primordial", icon:"🌀" },
+      { id:"prisea",     name:"Primordial Sea",   rarity:"primordial", icon:"🌊" },
+      { id:"privoid",    name:"Primordial Void",  rarity:"primordial", icon:"🕳️" },
+      { id:"origin",     name:"Origin",           rarity:"primordial", icon:"🌅" },
+      // Eternal (3)
+      { id:"eternity",   name:"Eternity",         rarity:"eternal",    icon:"♾️" },
+      { id:"etabyss",    name:"Eternal Abyss",    rarity:"eternal",    icon:"🌑" },
+      { id:"etdawn",     name:"Eternal Dawn",     rarity:"eternal",    icon:"🌄" },
+      // Celestial (2)
+      { id:"celgen",     name:"Celestial Genesis",rarity:"celestial",  icon:"✨" },
+      { id:"celcol",     name:"Celestial Collapse",rarity:"celestial", icon:"💫" },
+      // Glitched (1)
+      { id:"error",      name:"ERROR",            rarity:"glitched",   icon:"❌" },
+    ];
+
+    // ─── SHOP DATA ───────────────────────────────────────────────────────────
+    const LUCK_SHOP = [
+      { id:"l1", name:"Lucky Charm",    boost:0.25, cost:500,    label:"+0.25 Luck" },
+      { id:"l2", name:"Fortune Shard",  boost:0.5,  cost:2500,   label:"+0.50 Luck" },
+      { id:"l3", name:"Mystic Orb",     boost:1.0,  cost:10000,  label:"+1.00 Luck" },
+      { id:"l4", name:"Divine Fortune", boost:3.0,  cost:75000,  label:"+3.00 Luck" },
+      { id:"l5", name:"Cosmic Essence", boost:10.0, cost:600000, label:"+10.0 Luck" },
+    ];
+    const SPEED_SHOP = [
+      { level:2, name:"Speed Lv.2", cost:300,   ms:1300, label:"1.3s" },
+      { level:3, name:"Speed Lv.3", cost:1200,  ms:800,  label:"0.8s" },
+      { level:4, name:"Speed Lv.4", cost:6500,  ms:450,  label:"0.45s"},
+      { level:5, name:"Speed Lv.5", cost:35000, ms:200,  label:"0.2s" },
+    ];
+    const SPEED_MS = [2000, 1300, 800, 450, 200];
+    const CODES = {
+      "AURA2024":   { coins:1000, msg:"🎁 +1,000 Coins!"  },
+      "LUCKYSTAR":  { luck:0.5,   msg:"⭐ +0.5 Luck!"     },
+      "FREEGEMS":   { coins:500,  msg:"💎 +500 Coins!"     },
+      "PRIMORDIAL": { coins:5000, msg:"🌀 +5,000 Coins!"  },
+    };
+
+    // Pre-computed particle positions (stable across renders)
+    const PARTS = [...Array(28)].map((_,i) => ({
+      l:`${5+(i*37)%87}%`, t:`${8+(i*53)%80}%`,
+      s:2+(i*3)%4, dur:`${2.5+(i*0.37)%2.5}s`, dl:`${(i*0.18)%3.5}s`,
+    }));
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────
+    function rollAura(luck) {
+      const adj = {}; let tot = 0;
+      RK.forEach(k => { const p = k==="common" ? RARITY[k].prob : RARITY[k].prob * luck; adj[k]=p; tot+=p; });
+      let r = Math.random() * tot;
+      for (const k of RK) { r -= adj[k]; if (r <= 0) { const pool = AURAS.filter(a=>a.rarity===k); return pool[Math.floor(Math.random()*pool.length)]; } }
+      return AURAS[0];
+    }
+    function fmt(n) {
+      if (n>=1e12) return (n/1e12).toFixed(1)+"T";
+      if (n>=1e9)  return (n/1e9).toFixed(1)+"B";
+      if (n>=1e6)  return (n/1e6).toFixed(1)+"M";
+      if (n>=1e3)  return (n/1e3).toFixed(1)+"K";
+      return n.toLocaleString();
+    }
+
+    // ─── AURA PARTICLE DISPLAY ───────────────────────────────────────────────
+    function AuraDisplay({ aura, onUnequip }) {
+      const r = aura ? RARITY[aura.rarity] : null;
+      const c = r?.color ?? "#1e293b";
+      return (
+        <div style={{position:"relative",height:"190px",background:"rgba(255,255,255,0.02)",borderRadius:"10px",overflow:"hidden",border:`1px solid ${c}25`}}>
+          {aura && <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 50% 70%, ${c}18, transparent 65%)`,pointerEvents:"none"}}/>}
+          {aura && PARTS.map((p,i) => (
+            <div key={i} style={{position:"absolute",left:p.l,top:p.t,width:`${p.s}px`,height:`${p.s}px`,borderRadius:"50%",background:c,boxShadow:`0 0 ${p.s*3}px ${c}`,opacity:0.55,animation:`floatP ${p.dur} ease-in-out ${p.dl} infinite`}}/>
+          ))}
+          {!aura && (
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",flexDirection:"column",gap:"8px"}}>
+              <div style={{fontSize:"28px",opacity:0.15}}>🌀</div>
+              <div style={{color:"#1e293b",fontSize:"10px",letterSpacing:"3px",fontFamily:"'Cinzel',serif"}}>NO AURA EQUIPPED</div>
+            </div>
+          )}
+          {aura && (
+            <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(5,5,20,0.94))",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{display:"flex",alignItems:"center",gap:"9px"}}>
+                <span style={{fontSize:"22px"}}>{aura.icon}</span>
+                <div>
+                  <div style={{fontFamily:"'Cinzel',serif",fontSize:"13px",fontWeight:700,color:c}}>{aura.name}</div>
+                  <div style={{fontSize:"8.5px",letterSpacing:"2px",color:c,opacity:0.65}}>{r.label.toUpperCase()}</div>
+                </div>
+              </div>
+              <button onClick={onUnequip} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:"6px",padding:"4px 9px",color:"#475569",fontSize:"10px"}}>
+                ✕ Unequip
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── ROLL HISTORY BADGE ───────────────────────────────────────────────────
+    function Badge({ aura }) {
+      const r = RARITY[aura.rarity];
+      return (
+        <div style={{display:"inline-flex",alignItems:"center",gap:"5px",background:`${r.color}18`,border:`1px solid ${r.color}45`,borderRadius:"20px",padding:"3px 10px 3px 6px",fontSize:"11px",flexShrink:0,whiteSpace:"nowrap",animation:r.ord>=6?"rarePop 0.4s ease-out":"popIn 0.25s ease-out"}}>
+          <span style={{fontSize:"12px"}}>{aura.icon}</span>
+          <span style={{color:r.color}}>{aura.name}</span>
+        </div>
+      );
+    }
+
+    // ─── COLLECTION MODAL ─────────────────────────────────────────────────────
+    function CollectionModal({ collection, onClose }) {
+      const [filter, setFilter] = useState("all");
+      const owned = Object.keys(collection).length;
+      const show = filter === "all" ? RK : [filter];
+      return (
+        <div style={{position:"fixed",inset:0,zIndex:500,background:"rgba(2,2,14,0.96)",backdropFilter:"blur(14px)",overflowY:"auto"}}>
+          <div style={{maxWidth:"660px",margin:"0 auto",padding:"24px 16px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}>
+              <span style={{fontFamily:"'Cinzel',serif",fontSize:"13px",letterSpacing:"4px",color:"#e2e8f0"}}>🏆 COLLECTION ({owned}/{AURAS.length})</span>
+              <button onClick={onClose} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"7px",padding:"6px 14px",color:"#94a3b8",fontSize:"11px"}}>CLOSE</button>
+            </div>
+            {/* Filter pills */}
+            <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"16px"}}>
+              <button onClick={()=>setFilter("all")} style={{padding:"3px 10px",borderRadius:"12px",border:`1px solid ${filter==="all"?"#94a3b8":"rgba(255,255,255,0.08)"}`,background:filter==="all"?"rgba(148,163,184,0.12)":"transparent",color:filter==="all"?"#e2e8f0":"#475569",fontSize:"9.5px"}}>ALL</button>
+              {RK.map(k => {
+                const rc = RARITY[k];
+                const cnt = AURAS.filter(a=>a.rarity===k&&collection[a.id]).length;
+                const tot = AURAS.filter(a=>a.rarity===k).length;
+                return <button key={k} onClick={()=>setFilter(k)} style={{padding:"3px 10px",borderRadius:"12px",border:`1px solid ${filter===k?rc.color:"rgba(255,255,255,0.07)"}`,background:filter===k?`${rc.color}18`:"transparent",color:filter===k?rc.color:"#475569",fontSize:"9.5px"}}>{rc.label} {cnt}/{tot}</button>;
+              })}
+            </div>
+            {/* Aura grid */}
+            {show.map(rarity => {
+              const rc = RARITY[rarity];
+              const pool = AURAS.filter(a => a.rarity === rarity);
+              return (
+                <div key={rarity} style={{marginBottom:"18px"}}>
+                  <div style={{fontSize:"9px",letterSpacing:"2px",color:rc.color,marginBottom:"8px",fontFamily:"'Cinzel',serif"}}>{rc.label} ({pool.length})</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:"6px"}}>
+                    {pool.map(aura => {
+                      const cnt = collection[aura.id] || 0;
+                      return (
+                        <div key={aura.id} style={{background:`${rc.color}${cnt?"10":"05"}`,border:`1px solid ${rc.color}${cnt?"30":"10"}`,borderRadius:"8px",padding:"8px 10px",opacity:cnt?1:0.28,display:"flex",alignItems:"center",gap:"8px",transition:"opacity 0.2s"}}>
+                          <span style={{fontSize:"18px"}}>{aura.icon}</span>
+                          <div>
+                            <div style={{fontSize:"11px",color:cnt?rc.color:"#475569"}}>{aura.name}</div>
+                            <div style={{fontSize:"9px",color:"#334155",marginTop:"1px"}}>{cnt ? `× ${cnt}` : "Not found"}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── MAIN APP ─────────────────────────────────────────────────────────────
+    function App() {
+      const [coins,      setCoins]      = useState(0);
+      const [rolls,      setRolls]      = useState(0);
+      const [luck,       setLuck]       = useState(1.0);
+      const [speedLvl,   setSpeedLvl]   = useState(1);
+      const [equipped,   setEquipped]   = useState(null);
+      const [lastRoll,   setLastRoll]   = useState(null);
+      const [history,    setHistory]    = useState([]);
+      const [collection, setCollection] = useState({});
+      const [auto,       setAuto]       = useState(false);
+      const [shopOpen,   setShopOpen]   = useState(false);
+      const [collOpen,   setCollOpen]   = useState(false);
+      const [codeInput,  setCodeInput]  = useState("");
+      const [usedCodes,  setUsedCodes]  = useState(new Set());
+      const [notif,      setNotif]      = useState(null);
+      // Rolling animation state
+      const [rolling,    setRolling]    = useState(false);
+      const [slotAura,   setSlotAura]   = useState(null); // aura shown during spin
+      const [flash,      setFlash]      = useState(null); // screen flash color
+
+      const luckRef   = useRef(luck);
+      const fastRef   = useRef(null);
+      const slowRef   = useRef(null);
+      const slowTmRef = useRef(null);
+      useEffect(() => { luckRef.current = luck; }, [luck]);
+
+      // ── Slot-machine cycling during manual roll ──
+      useEffect(() => {
+        if (!rolling) { setSlotAura(null); return; }
+        // Phase 1: fast spin (0–900ms, every 65ms)
+        fastRef.current = setInterval(() => {
+          setSlotAura(AURAS[Math.floor(Math.random() * AURAS.length)]);
+        }, 65);
+        // Phase 2: slow down (900ms+, every 210ms) before result lands
+        slowTmRef.current = setTimeout(() => {
+          clearInterval(fastRef.current);
+          slowRef.current = setInterval(() => {
+            setSlotAura(AURAS[Math.floor(Math.random() * AURAS.length)]);
+          }, 210);
+        }, 900);
+        return () => {
+          clearInterval(fastRef.current);
+          clearInterval(slowRef.current);
+          clearTimeout(slowTmRef.current);
+        };
+      }, [rolling]);
+
+      function showNotif(msg) { setNotif(msg); setTimeout(() => setNotif(null), 2800); }
+
+      // Applies a rolled aura to all state
+      function applyRoll(aura) {
+        const r = RARITY[aura.rarity];
+        setCoins(c => c + r.coins);
+        setRolls(n => n + 1);
+        setLastRoll(aura);
+        setHistory(h => [aura, ...h].slice(0, 120));
+        setCollection(prev => ({ ...prev, [aura.id]: (prev[aura.id] || 0) + 1 }));
+        return r;
+      }
+
+      // ── Manual roll: 1.3s animated spin then reveal ──
+      function handleRoll() {
+        if (rolling) return;
+        setRolling(true);
+        setTimeout(() => {
+          const aura = rollAura(luckRef.current);
+          const r = applyRoll(aura);
+          // Flash screen on legendary+
+          if (r.ord >= 5) {
+            setFlash(r.color);
+            setTimeout(() => setFlash(null), r.ord >= 9 ? 1000 : 650);
+          }
+          setRolling(false);
+          if (r.ord >= 7) showNotif(`${aura.icon} ${aura.name} — ${r.label.toUpperCase()}! +${fmt(r.coins)} coins`);
+        }, 1300);
+      }
+
+      // ── Auto-roll: instant rolls (no spin delay), flash for primordial+ ──
+      useEffect(() => {
+        if (!auto) return;
+        const ms = SPEED_MS[speedLvl - 1];
+        const id = setInterval(() => {
+          const aura = rollAura(luckRef.current);
+          const r = applyRoll(aura);
+          if (r.ord >= 9) {
+            setFlash(r.color);
+            setTimeout(() => setFlash(null), 500);
+            showNotif(`${aura.icon} ${aura.name} — ${r.label.toUpperCase()}!`);
+          }
+        }, ms);
+        return () => clearInterval(id);
+      }, [auto, speedLvl]); // eslint-disable-line
+
+      function buyLuck(item) {
+        if (coins < item.cost) { showNotif("Not enough coins!"); return; }
+        setCoins(c => c - item.cost);
+        setLuck(l => parseFloat((l + item.boost).toFixed(2)));
+        showNotif(`${item.label} applied! ✨`);
+      }
+
+      function buySpeed(item) {
+        if (speedLvl >= item.level) return;
+        if (coins < item.cost) { showNotif("Not enough coins!"); return; }
+        setCoins(c => c - item.cost);
+        setSpeedLvl(item.level);
+        showNotif(`Speed upgraded to Lv.${item.level}!`);
+      }
+
+      function redeem() {
+        const code = codeInput.trim().toUpperCase();
+        if (!code) return;
+        if (usedCodes.has(code)) { showNotif("Code already used!"); return; }
+        const reward = CODES[code];
+        if (!reward) { showNotif("❌ Invalid code!"); return; }
+        if (reward.coins) setCoins(c => c + reward.coins);
+        if (reward.luck)  setLuck(l => parseFloat((l + reward.luck).toFixed(2)));
+        setUsedCodes(prev => new Set([...prev, code]));
+        setCodeInput("");
+        showNotif(reward.msg);
+      }
+
+      const card  = { background:"rgba(255,255,255,0.025)", border:"1px solid rgba(255,255,255,0.065)", borderRadius:"10px", padding:"14px" };
+      const lastR = lastRoll ? RARITY[lastRoll.rarity] : null;
+      const slotR = slotAura ? RARITY[slotAura.rarity] : null;
+
+      return (
+        <div style={{minHeight:"100vh"}}>
+
+          {/* Screen flash overlay */}
+          {flash && <div style={{position:"fixed",inset:0,zIndex:999,background:flash,pointerEvents:"none",animation:"flashFade 0.9s ease-out forwards"}}/>}
+
+          {/* Toast notification */}
+          {notif && (
+            <div style={{position:"fixed",top:"18px",left:"50%",zIndex:998,background:"rgba(10,10,28,0.97)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:"20px",padding:"8px 20px",fontSize:"12px",color:"#e2e8f0",whiteSpace:"nowrap",animation:"notif 2.8s ease forwards",backdropFilter:"blur(10px)",pointerEvents:"none"}}>
+              {notif}
+            </div>
+          )}
+
+          {collOpen && <CollectionModal collection={collection} onClose={() => setCollOpen(false)}/>}
+
+          {/* ── Title ── */}
+          <div style={{textAlign:"center",paddingTop:"28px",paddingBottom:"14px"}}>
+            <h1 style={{fontFamily:"'Cinzel',serif",fontSize:"clamp(30px,7vw,52px)",fontWeight:900,letterSpacing:"8px",background:"linear-gradient(135deg,#c7d2fe,#a5b4fc,#818cf8)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",animation:"titleGlow 3s ease-in-out infinite"}}>
+              AURA RNG
+            </h1>
+            <p style={{color:"#1e293b",fontSize:"10px",letterSpacing:"5px",marginTop:"5px"}}>{AURAS.length} AURAS · {RK.length} RARITIES</p>
+          </div>
+
+          {/* ── Stats bar ── */}
+          <div style={{display:"flex",justifyContent:"center",gap:"7px",flexWrap:"wrap",padding:"0 14px 16px"}}>
+            {[{label:"Coins",val:`${fmt(coins)} 💰`},{label:"Rolls",val:rolls.toLocaleString()},{label:"Luck",val:`×${luck.toFixed(2)}`},{label:"Speed",val:`Lv.${speedLvl}`}].map(s => (
+              <div key={s.label} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:"8px",padding:"6px 14px",display:"flex",gap:"8px",alignItems:"baseline"}}>
+                <span style={{color:"#334155",fontSize:"9.5px",letterSpacing:"1px"}}>{s.label}</span>
+                <span style={{color:"#e2e8f0",fontSize:"13px",fontWeight:500}}>{s.val}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Main content ── */}
+          <div style={{maxWidth:"680px",margin:"0 auto",padding:"0 14px 40px",display:"flex",flexDirection:"column",gap:"9px"}}>
+
+            {/* Equipped aura panel */}
+            <div style={card}>
+              <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"10px"}}>
+                <span style={{color:"#fbbf24"}}>⚡</span>
+                <span style={{fontFamily:"'Cinzel',serif",fontSize:"9px",letterSpacing:"3px",color:"#334155"}}>EQUIPPED AURA</span>
+              </div>
+              <AuraDisplay aura={equipped} onUnequip={() => setEquipped(null)}/>
+              {lastRoll && lastRoll.id !== equipped?.id && !rolling && (
+                <button onClick={() => setEquipped(lastRoll)}
+                  style={{marginTop:"9px",width:"100%",padding:"9px",background:`${lastR?.color ?? '#818cf8'}14`,border:`1px solid ${lastR?.color ?? '#818cf8'}40`,borderRadius:"8px",color:lastR?.color ?? "#818cf8",fontFamily:"'Cinzel',serif",fontSize:"9.5px",letterSpacing:"2px",display:"flex",alignItems:"center",justifyContent:"center",gap:"7px"}}>
+                  ⚡ EQUIP — {lastRoll.icon} {lastRoll.name}
+                </button>
+              )}
+            </div>
+
+            {/* ── Slot-machine display (shown while rolling) ── */}
+            {rolling && slotAura && (
+              <div style={{...card,textAlign:"center",padding:"22px 14px",border:`1px solid ${slotR?.color ?? '#818cf8'}40`,background:`${slotR?.color ?? '#818cf8'}08`,animation:"slotFlick 0.14s ease-in-out infinite"}}>
+                <div style={{fontSize:"54px",marginBottom:"8px",display:"inline-block",lineHeight:1,animation:"spinIcon 0.28s linear infinite"}}>
+                  {slotAura.icon}
+                </div>
+                <div style={{fontFamily:"'Cinzel',serif",fontSize:"17px",color:slotR?.color ?? "#818cf8",letterSpacing:"2px"}}>{slotAura.name}</div>
+                <div style={{fontSize:"9px",color:"#334155",letterSpacing:"2px",marginTop:"4px"}}>{slotR?.label.toUpperCase()}</div>
+              </div>
+            )}
+
+            {/* ── ROLL button ── */}
+            <button onClick={handleRoll} disabled={rolling}
+              style={{padding:"17px",background:rolling?"rgba(124,58,237,0.25)":"linear-gradient(135deg,#7c3aed,#6d28d9,#5b21b6)",border:"none",borderRadius:"10px",color:rolling?"rgba(255,255,255,0.4)":"#fff",fontFamily:"'Cinzel',serif",fontSize:"17px",fontWeight:700,letterSpacing:"5px",cursor:rolling?"not-allowed":"pointer",animation:rolling?"none":"rollPulse 2.5s ease-in-out infinite",display:"flex",alignItems:"center",justifyContent:"center",gap:"10px"}}>
+              {rolling
+                ? <><span style={{display:"inline-block",animation:"spinIcon 0.7s linear infinite"}}>⟳</span> ROLLING...</>
+                : "⚡ ROLL"
+              }
+            </button>
+
+            {/* Auto + Shop toggles */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+              <button onClick={() => setAuto(a => !a)} disabled={rolling}
+                style={{padding:"11px",background:auto?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.03)",border:`1px solid ${auto?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.07)"}`,borderRadius:"8px",color:auto?"#4ade80":"#475569",fontFamily:"'Cinzel',serif",fontSize:"10px",letterSpacing:"2px",cursor:"pointer"}}>
+                🤖 AUTO: {auto ? "ON" : "OFF"}
+              </button>
+              <button onClick={() => setShopOpen(s => !s)}
+                style={{padding:"11px",background:shopOpen?"rgba(192,132,252,0.12)":"rgba(255,255,255,0.03)",border:`1px solid ${shopOpen?"rgba(192,132,252,0.45)":"rgba(255,255,255,0.07)"}`,borderRadius:"8px",color:shopOpen?"#c084fc":"#475569",fontFamily:"'Cinzel',serif",fontSize:"10px",letterSpacing:"2px",cursor:"pointer"}}>
+                🛒 LUCK SHOP
+              </button>
+            </div>
+
+            {auto && <div style={{textAlign:"center",fontSize:"10px",color:"#334155",letterSpacing:"1px"}}>Auto-rolling every {SPEED_MS[speedLvl-1]}ms · {fmt(coins)} coins earned</div>}
+
+            {/* ── Shop panel ── */}
+            {shopOpen && (
+              <div style={{...card,animation:"slideDown 0.2s ease-out"}}>
+                <div style={{fontFamily:"'Cinzel',serif",fontSize:"9px",letterSpacing:"3px",color:"#334155",marginBottom:"12px"}}>⭐ LUCK UPGRADES</div>
+                <div style={{display:"flex",flexDirection:"column",gap:"6px",marginBottom:"16px"}}>
+                  {LUCK_SHOP.map(item => (
+                    <div key={item.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:"7px",padding:"8px 11px"}}>
+                      <div>
+                        <div style={{fontSize:"12px",color:"#cbd5e1"}}>{item.name}</div>
+                        <div style={{fontSize:"9px",color:"#4ade80",marginTop:"1px"}}>{item.label}</div>
+                      </div>
+                      <button onClick={() => buyLuck(item)} disabled={coins < item.cost}
+                        style={{background:coins>=item.cost?"rgba(192,132,252,0.14)":"rgba(255,255,255,0.03)",border:`1px solid ${coins>=item.cost?"rgba(192,132,252,0.4)":"rgba(255,255,255,0.06)"}`,borderRadius:"6px",padding:"5px 11px",color:coins>=item.cost?"#c084fc":"#334155",fontSize:"10px",cursor:coins<item.cost?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+                        💰 {fmt(item.cost)}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div style={{fontFamily:"'Cinzel',serif",fontSize:"9px",letterSpacing:"3px",color:"#334155",marginBottom:"12px"}}>⚡ SPEED UPGRADES</div>
+                <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+                  {SPEED_SHOP.map(item => {
+                    const owned = speedLvl >= item.level;
+                    return (
+                      <div key={item.level} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:"7px",padding:"8px 11px",opacity:owned?0.5:1}}>
+                        <div>
+                          <div style={{fontSize:"12px",color:"#cbd5e1"}}>{item.name}</div>
+                          <div style={{fontSize:"9px",color:"#60a5fa",marginTop:"1px"}}>Auto interval: {item.label}</div>
+                        </div>
+                        <button onClick={() => buySpeed(item)} disabled={owned || coins < item.cost}
+                          style={{background:owned?"rgba(34,197,94,0.1)":coins>=item.cost?"rgba(96,165,250,0.14)":"rgba(255,255,255,0.03)",border:`1px solid ${owned?"rgba(34,197,94,0.3)":coins>=item.cost?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.06)"}`,borderRadius:"6px",padding:"5px 11px",color:owned?"#4ade80":coins>=item.cost?"#60a5fa":"#334155",fontSize:"10px",cursor:(owned||coins<item.cost)?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+                          {owned ? "✓ Owned" : `💰 ${fmt(item.cost)}`}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── Redeem code ── */}
+            <div style={card}>
+              <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"10px"}}>
+                <span>🔑</span>
+                <span style={{fontFamily:"'Cinzel',serif",fontSize:"9px",letterSpacing:"3px",color:"#334155"}}>REDEEM CODE</span>
+              </div>
+              <div style={{display:"flex",gap:"7px"}}>
+                <input value={codeInput} onChange={e => setCodeInput(e.target.value)} onKeyDown={e => e.key==="Enter" && redeem()}
+                  placeholder="Enter code..."
+                  style={{flex:1,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:"7px",padding:"9px 12px",color:"#e2e8f0",fontSize:"12px"}}/>
+                <button onClick={redeem}
+                  style={{padding:"9px 16px",background:"rgba(139,92,246,0.18)",border:"1px solid rgba(139,92,246,0.45)",borderRadius:"7px",color:"#a78bfa",fontFamily:"'Cinzel',serif",fontSize:"10px",letterSpacing:"1px"}}>
+                  REDEEM
+                </button>
+              </div>
+              <div style={{fontSize:"9px",color:"#1e293b",marginTop:"6px"}}>Try: AURA2024 · LUCKYSTAR · FREEGEMS · PRIMORDIAL</div>
+            </div>
+
+            {/* ── Roll history ── */}
+            <div style={card}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"11px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                  <span style={{fontFamily:"'Cinzel',serif",fontSize:"9px",letterSpacing:"3px",color:"#334155"}}>ROLL HISTORY</span>
+                  <span style={{color:"#1e293b",fontSize:"10px"}}>{rolls.toLocaleString()} rolls</span>
+                </div>
+                <button onClick={() => setCollOpen(true)}
+                  style={{display:"flex",alignItems:"center",gap:"5px",background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",borderRadius:"7px",padding:"5px 12px",color:"#fbbf24",fontFamily:"'Cinzel',serif",fontSize:"9px",letterSpacing:"1px",cursor:"pointer"}}>
+                  🏆 COLLECTION
+                </button>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:"5px",maxHeight:"220px",overflowY:"auto"}}>
+                {history.length === 0
+                  ? <div style={{color:"#1e293b",fontSize:"11px",letterSpacing:"2px",width:"100%",textAlign:"center",padding:"24px",fontFamily:"'Cinzel',serif"}}>Hit ROLL to begin</div>
+                  : history.map((aura, i) => <Badge key={i} aura={aura}/>)
+                }
+              </div>
+            </div>
+
+            {/* ── Rarity reference ── */}
+            <div style={card}>
+              <div style={{fontFamily:"'Cinzel',serif",fontSize:"9px",letterSpacing:"3px",color:"#334155",marginBottom:"10px"}}>RARITY REFERENCE</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px"}}>
+                {RK.map(k => {
+                  const rc = RARITY[k];
+                  const pct = rc.prob < 0.01 ? (rc.prob*100).toFixed(3) : (rc.prob*100).toFixed(1);
+                  return (
+                    <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:`${rc.color}10`,border:`1px solid ${rc.color}22`,borderRadius:"5px"}}>
+                      <span style={{color:rc.color,fontSize:"9px",fontFamily:"'Cinzel',serif"}}>{rc.label}</span>
+                      <span style={{color:"#334155",fontSize:"8px"}}>{pct}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
